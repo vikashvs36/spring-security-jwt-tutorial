@@ -74,3 +74,65 @@ To Authenticate the user we need to implement UserDetailsService interface.
 			return new User("vikash", "pass", new ArrayList<>());
 		}
 	}
+
+**Note :** There is hard coded user credentials, To implement login through database we need to add some more code is given below:
+
+## Database Authentication 
+
+**User Entity :**
+
+We will create a entity class called **User** there has already created *User* class in package *org.springframework.security.core.userdetails.User* so you can create with different bean name.
+
+Here we are using Hibernate so we will use of their annotation:
+
+	@Entity
+	public class User {
+		@Id
+		@GeneratedValue(strategy = GenerationType.AUTO)
+		private Long id;
+		private String userName;
+		private String password;
+		private String email;
+		// Constructor and Setter & Getter
+	}
+
+**User Repository**
+
+Here we will create UserRepository with implement JpaRepository interface.
+
+	@Repository
+	public interface UserRepository extends JpaRepository<User, Long> {
+		Optional<User> findByUserName(String userName);
+	}
+
+**Load userDetails from Database :**
+
+	@Service
+	public class CustomUserDetailsService implements UserDetailsService {
+		
+		@Autowired
+		private UserRepository userRepository;
+		
+		@Override
+		public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+			Optional<User> userOptional = userRepository.findByUserName(username);
+			User user = userOptional.orElseThrow(() -> new UsernameNotFoundException("Username not found"));
+			return new org.springframework.security.core.userdetails.User(user.getUserName(), user.getPassword(),
+					new ArrayList<>());
+		}
+	}
+
+**Add the users at the Application running time**
+
+	@PostConstruct
+	public void init() {
+		List<User> users = Stream.of(new User("vikash", "singh", "vikash@gmail.com"),
+				new User("user1", "pass1", "user1@gmail.com"), new User("user2", "pass2", "user2@gmail.com"),
+				new User("user3", "pass3", "user3@gmail.com"), new User("user4", "pass4", "user4@gmail.com"))
+				.collect(Collectors.toList());
+		userRepository.saveAll(users);
+	}
+
+
+
+

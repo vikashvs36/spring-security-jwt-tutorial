@@ -133,6 +133,153 @@ Here we will create UserRepository with implement JpaRepository interface.
 		userRepository.saveAll(users);
 	}
 
+## How to Authenticate Rest Api with JWT token
+
+Create a JWTUtil class to generate token and manage token expiration time and all.
+
+	@Service
+	public class JwtUtil implements Serializable {
+	
+		private static final long serialVersionUID = -2550185165626007488L;
+	
+		private String SECRET_KEY = "secret";
+	
+		public static final long JWT_TOKEN_VALIDITY = 10 * 60 * 60;
+	
+		// retrieve username from jwt token
+		public String getUsernameFromToken(String token) {
+			return getClaimFromToken(token, Claims::getSubject);
+		}
+	
+		// retrieve expiration date from jwt token
+		public Date getExpirationDateFromToken(String token) {
+			return getClaimFromToken(token, Claims::getExpiration);
+		}
+	
+		public <T> T getClaimFromToken(String token, Function<Claims, T> claimsResolver) {
+			final Claims claims = getAllClaimsFromToken(token);
+			return claimsResolver.apply(claims);
+		}
+	
+		// for retrieveing any information from token we will need the secret key
+		private Claims getAllClaimsFromToken(String token) {
+			return Jwts.parser().setSigningKey(SECRET_KEY).parseClaimsJws(token).getBody();
+		}
+	
+		// check if the token has expired
+		private Boolean isTokenExpired(String token) {
+			final Date expiration = getExpirationDateFromToken(token);
+			return expiration.before(new Date());
+		}
+	
+		// generate token for user
+		public String generateToken(UserDetails userDetails) {
+			Map<String, Object> claims = new HashMap<>();
+			return doGenerateToken(claims, userDetails.getUsername());
+		}
+	
+		// while creating the token -
+		// 1. Define claims of the token, like Issuer, Expiration, Subject, and the ID
+		// 2. Sign the JWT using the HS512 algorithm and secret key.
+		// 3. According to JWS Compact
+		// Serialization(https://tools.ietf.org/html/draft-ietf-jose-json-web-signature-41#section-3.1)
+		// compaction of the JWT to a URL-safe string
+		private String doGenerateToken(Map<String, Object> claims, String subject) {
+			return Jwts.builder().setClaims(claims).setSubject(subject).setIssuedAt(new Date(System.currentTimeMillis()))
+					.setExpiration(new Date(System.currentTimeMillis() + JWT_TOKEN_VALIDITY))
+					.signWith(SignatureAlgorithm.HS512, SECRET_KEY).compact();
+		}
+	
+		// validate token
+		public Boolean validateToken(String token, UserDetails userDetails) {
+			final String username = getUsernameFromToken(token);
+			return (username.equals(userDetails.getUsername()) && !isTokenExpired(token));
+		}
+	}
+
+**Create a request bean to get username and password**
+
+	public class JwtRequest implements Serializable {
+		private static final long serialVersionUID = 5926468583005150707L;
+		
+		private String username;
+		private String password;
+		
+		//need default constructor for JSON Parsing
+		public JwtRequest()	{}
+	
+		public JwtRequest(String username, String password) {
+			this.setUsername(username);
+			this.setPassword(password);
+		}
+		
+		//Create Getter and Setter
+	}	
+
+**To return the tokean as response we will create a JwtResponse bean**
+
+	public class JwtResponse implements Serializable {
+
+		private static final long serialVersionUID = -8091879091924046844L;
+		private final String jwttoken;
+	
+		public JwtResponse(String jwttoken) {
+			this.jwttoken = jwttoken;
+		}
+	
+		public String getToken() {
+			return this.jwttoken;
+		}
+	}
+
+**To get the token we need to create a api that is "/authenticate"**
+
+	@PostMapping(value = "/authenticate")
+	public ResponseEntity<?> createAuthenticationToken(@RequestBody JwtRequest authenticationRequest) throws Exception {
+
+		authenticate(authenticationRequest.getUsername(), authenticationRequest.getPassword());
+
+		final UserDetails userDetails = userDetailsService
+				.loadUserByUsername(authenticationRequest.getUsername());
+
+		final String token = jwtUtil.generateToken(userDetails);
+
+		return ResponseEntity.ok(new JwtResponse(token));
+	}
+	
+	private void authenticate(String username, String password) throws Exception {
+		try {
+			authenticationManager.authenticate(new UsernamePasswordAuthenticationToken(username, password));
+		} catch (DisabledException e) {
+			throw new Exception("USER_DISABLED", e);
+		} catch (BadCredentialsException e) {
+			throw new Exception("INVALID_CREDENTIALS", e);
+		}
+	}
+
+**To call the AuthenticationManager we need to create the @Bean and override method in SecurityConfig class.**
+
+	@Bean
+	@Override
+	public AuthenticationManager authenticationManagerBean() throws Exception {
+		return super.authenticationManagerBean();
+	}
+
+**Somebody will call the "/authenticate" api so don't expect this API is authenticated. For don't apply authentication on this API we need to override configure(HttpSecurity http) method in SecurityConfig class.**
+
+	@Override
+	protected void configure(HttpSecurity http) throws Exception {
+		// We don't need CSRF for this example
+				http.csrf().disable()
+						// dont authenticate this particular request
+						.authorizeRequests().antMatchers("/authenticate").permitAll().
+						// all other requests need to be authenticated
+						anyRequest().authenticated();/*
+	}
+	
+**Now we are good and able to generate token as we can see in given below picture :**
+
+![token](img/token.PNG)
 
 
 

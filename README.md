@@ -281,5 +281,72 @@ Create a JWTUtil class to generate token and manage token expiration time and al
 
 ![token](img/token.PNG)
 
+But Still we are not able to call another api with the help of this generated token. So to call another API with the help of this token we need to implement authorized request through JwtFilter.
 
+![Without Filter](img/WithoutFilter.PNG)
+
+## Intercept all incoming requests
+
+* Extract JWT from the header
+* Validate and set in execution context.
+
+**Add a filter to intercept all incoming requests**
+
+	@Component
+	public class JwtRequestFilter extends OncePerRequestFilter {
+	
+		@Autowired
+		private JwtUtil jwtUtil;
+		
+		@Autowired
+		private CustomUserDetailsService customUserDetailsService;
+		
+		@Override
+		protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+				throws ServletException, IOException {
+			final String authorizationHeader = request.getHeader("Authorization");
+			String username = null;
+			String jwt = null;
+	
+			if (authorizationHeader != null && authorizationHeader.startsWith("Bearer ")) {
+				jwt = authorizationHeader.substring(7);
+				username = jwtUtil.getUsernameFromToken(jwt);
+			}
+	
+			if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+				UserDetails userDetails = this.customUserDetailsService.loadUserByUsername(username);
+				if (jwtUtil.validateToken(jwt, userDetails)) {
+					UsernamePasswordAuthenticationToken usernamePasswordAuthenticationToken = new UsernamePasswordAuthenticationToken(
+							userDetails, null, userDetails.getAuthorities());
+					usernamePasswordAuthenticationToken
+							.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+					SecurityContextHolder.getContext().setAuthentication(usernamePasswordAuthenticationToken);
+				}
+			}
+			filterChain.doFilter(request, response);
+		}
+	}
+	
+After implemented Jwt request filter, needs to tell to Spring security to don't manage sessionManagement and call the filter before **UsernamePasswordAuthenticationFilter** call as given below in WebSecurityConfigurerAdapter implemented class:
+
+		@Override
+	protected void configure(HttpSecurity http) throws Exception {
+		// We don't need CSRF for this example
+		http.csrf().disable()
+				// dont authenticate this particular request
+				.authorizeRequests().antMatchers("/authenticate").permitAll().
+				// all other requests need to be authenticated
+				anyRequest().authenticated()
+				//.and().exceptionHandling().authenticationEntryPoint(jwtAuthenticationEntryPoint)
+				// make sure we use stateless session; session won't be used to // store user's
+				// state.
+				.and().sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS);
+	
+		http.addFilterBefore(jwtRequestFilter, UsernamePasswordAuthenticationFilter.class);			
+				
+	}
+
+Now with this we are finally done to Intercept all incoming requests to validate user with token. Run the project and call the another request with valid token as given below:
+
+![With token](img/withtoken.PNG)
 

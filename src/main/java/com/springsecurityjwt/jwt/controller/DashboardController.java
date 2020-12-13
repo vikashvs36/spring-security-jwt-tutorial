@@ -30,8 +30,8 @@ public class DashboardController {
 	private AuthenticationManager authenticationManager;
 	
 	@GetMapping(value = {"/","/home"})
-	public String home() {
-		return "Welcome to Spring Security";
+	public ResponseEntity<?> home() {
+		return ResponseEntity.ok("Welcome to Spring Security");
 	}
 	
 	@PostMapping(value = "/authenticate")
